@@ -11,6 +11,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp 
     src/file_reader.cpp
     src/visualizer.cpp
+    src/seq_algorithm.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Pangolin_INCLUDE_DIRS})

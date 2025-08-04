@@ -16,4 +16,5 @@ public:
     Visualizer(const std::string& s);
     ~Visualizer();
     void simple_visualization(const std::vector<Point>& lidar_data);
+    void visualize_protype_points(const std::vector<Point>& lidar_data, const std::vector<Point>& prototype_points);
 };
