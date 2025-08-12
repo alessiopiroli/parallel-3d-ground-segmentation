@@ -5,12 +5,15 @@
 #include <vector>
 #include <cstdio>
 #include <math.h>
+#include <cstdint>
 
 struct Point{
     float x_value;
     float y_value;
     float z_value;
     float ref_value;
+    uint32_t ground_truth;
+    uint32_t prediction;
 
     // constructor for the point
     Point(const float x_val, const float y_val, const float z_val, const float ref_val);
@@ -37,12 +40,14 @@ struct Point{
 class ReadLiDARdata {
 private:
     // std::string file_name;
-    std::string file_path;
+    std::string coordinates_path;
+    std::string labels_path;
+    int ground_point_number;
     float max_range;
 
 public:
     // constructor for the class
-    ReadLiDARdata(const std::string&& file_path_);
+    ReadLiDARdata(const std::string& coordinates_path_, const std::string& labels_path_);
 
     // reading the data
     void read_data(std::vector<Point>& lidar_data);
@@ -52,6 +57,9 @@ public:
 
     // get scene size
     void get_scene_size(const std::vector<Point>& lidar_data);
+
+    // get the real number of ground points
+    int get_n_ground_points() const;
 
     // get max range
     float get_max_range() const;

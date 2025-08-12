@@ -4,6 +4,10 @@
 #include <pangolin/pangolin.h>
 
 #include <memory>
+#include <cstdlib>
+#include <ctime>
+#include <chrono>
+#include <thread>
 
 class Visualizer {
 private:
@@ -17,4 +21,5 @@ public:
     ~Visualizer();
     void simple_visualization(const std::vector<Point>& lidar_data);
     void visualize_protype_points(const std::vector<Point>& lidar_data, const std::vector<Point>& prototype_points);
+    void timed_visualization(const std::vector<Point>& lidar_data, const std::vector<Point>& prototype_points);
 };

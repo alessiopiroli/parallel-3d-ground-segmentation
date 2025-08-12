@@ -32,9 +32,5 @@ public:
 
     void plot_binned_segments(std::vector<Point>& lidar_data, const int n_segments, const int n_bins, const float max_range);
 
-    void ground_estimation(
-        std::vector<Point>& lidar_data,
-        const int n_segments,
-        const int n_bins,
-        const float max_range);
+    void ground_estimation_and_clustering(std::vector<Point>& lidar_data, const int n_segments, const int n_bins, const float max_range);
 };

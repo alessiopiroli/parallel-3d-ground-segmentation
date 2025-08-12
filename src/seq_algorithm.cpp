@@ -2,6 +2,7 @@
 #include "visualizer.hpp"
 #include <string>
 #include <algorithm>
+#include <queue>
 
 Sequential::Sequential(const float slope_, const int n_bins_, const int n_segments):
     slope{slope_}, n_bins{n_bins_} {}
@@ -125,7 +126,7 @@ Line fit_line_to_points(const std::vector<Point>& points) {
 
         // we can't create a line if we end up dividing by zero
         if (denominator == 0.0) {
-            std::cout << "Denominator is zero, return empty line" << std::endl;
+            // std::cout << "Denominator is zero, returning empty line" << std::endl;
             return Line();
         } else {
             const int n = points.size();
@@ -136,8 +137,20 @@ Line fit_line_to_points(const std::vector<Point>& points) {
     }
 }
 
+float calculate_rmse(const Line& line, const std::vector<Point>& points) {
+    if (points.empty() || !line.is_valid) {
+        return std::numeric_limits<float>::max();
+    }
+    float sum_squared_error = 0.0;
+    for (const auto& p : points) {
+        float expected_z = line.m * p.get_rho() + line.b;
+        float error = p.get_z_value() - expected_z;
+        sum_squared_error += error * error;
+    }
+    return std::sqrt(sum_squared_error / points.size());
+}
 
-void Sequential::ground_estimation(
+void Sequential::ground_estimation_and_clustering(
     std::vector<Point>& lidar_data,
     const int n_segments,
     const int n_bins,
@@ -191,7 +204,7 @@ void Sequential::ground_estimation(
         for (int i = 0; i < binned_segments.size(); i++) {
             for (int j = 0; j < binned_segments[i].size(); j++) {
                 if (binned_segments[i][j].empty()) {
-                    std::cout << "Empty bin" << std::endl;
+                    // std::cout << "Empty bin" << std::endl;
                 } else {
                     // if the bin contains at least one points, we find the points with the lowest z value
                     // then, this points is copied in the prototype_points vector, in the same segment it 
@@ -212,93 +225,80 @@ void Sequential::ground_estimation(
         }
 
         // we need to sort the prototype points in each segment by ascending distance
-
-        for (int i = 0; i < prototype_points.size(); i++) {
-            std::sort(prototype_points[i].begin(), prototype_points[i].end(), 
-                [](const Point& l, const Point& r){ return l.get_rho() < r.get_rho(); });
+        for (auto& segment: prototype_points) {
+            std::sort(segment.begin(), segment.end());
         }
 
-        // now we need to fit lines through prototype points
-        // to do this, we need to define the max slope these lines can have
-        // and what the maximum distance between lines is
 
-        const float max_slope = 0.27;
+        // now we need to fit lines through prototype points
+        // to do this, we need to define the paper's parameters
+        const float max_slope = 0.3;
         const float vd_ground = 0.15;
+        const float max_y_intercept = 0.2;
+        const float max_rmse = 0.3;
 
         // we need to create a vector of lines, with size same as the 
         // number of segments
         std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
 
-        // we now loop through each segment and we do the line fitting
-        // using the prototype points
-        for (int i = 0; i < prototype_points.size(); i++) {
-            // prototype_points[i] points to the prototype points
-            // of segment i
-            
-            // if the segment contains no prototype points we skip the iteration
-            if (prototype_points[i].empty()) {
-                continue;
-            }
+        // we loop through each segment and do the line fitting using the prototype points
+        for (int i = 0; i < n_segments; ++i) {
+            if (prototype_points[i].size() < 2) continue;
 
-            // we create a vector which contains the points that contribute
-            // to the current line
+            // we create a vector of points which contains the points making up the line
             std::vector<Point> current_line_points;
-
-            // we need to add the first point in the vector
             current_line_points.push_back(prototype_points[i][0]);
 
-            // we then loop from the second point to do the actual testing
-            for (int j = 0; j < prototype_points[i].size(); ++j) {
-                // we save the point which exam to see if it still fits
+            for (size_t j = 1; j < prototype_points[i].size(); ++j) {
                 Point current_point = prototype_points[i][j];
-
-                // we then need to test if the point actually keeps the line as
-                // ground or not
-                // to do this we need to use a temporary vector to copy our points
-                std::vector<Point> test_points = current_line_points;
-                test_points.push_back(current_point);
-
-                // then we create the test line and check the parameters
-                Line test_line = fit_line_to_points(test_points);
-
-                if (!test_line.is_valid) {
-                    current_line_points.clear();
+            
+                // if we don't have enough points we need to another one
+                if (current_line_points.size() < 2) {
                     current_line_points.push_back(current_point);
                     continue;
                 }
 
-                // we check if we are still in the bounds for adding this point
-                // to the line or not
-                if (std::abs(test_line.m) < max_slope) {
-                    // if this is the case, we can add this to the points 
+                // we copy the points to create a vector of test points
+                std::vector<Point> test_points = current_line_points;
+                test_points.push_back(current_point);
+                Line test_line = fit_line_to_points(test_points);
+
+                // we check if the conditions described in the paper are satisfied
+                if (test_line.is_valid && 
+                    std::abs(test_line.m) < max_slope && 
+                    calculate_rmse(test_line, test_points) < max_rmse &&
+                    std::abs(test_line.b) < max_y_intercept) {
+                    
+                    // if the point fits then we add it
                     current_line_points.push_back(current_point);
                 } else {
-                    // if the point does not fit, we end the line and we save it
-                    // but only if the line is made up of more than two points
-                    if (current_line_points.size() >= 2) {
-                        ground_lines_per_segment[i].push_back(fit_line_to_points(current_line_points));
+                    // if the point doesn't fit we finalize the last one
+                    Line final_line = fit_line_to_points(current_line_points);
+                    if (final_line.is_valid) {
+                        ground_lines_per_segment[i].push_back(final_line);
                     }
-
-                    // we then need to start a new line, with the first point
-                    // being the one that broke the slope condition
+                    // we use the last point that didn't fit to start the next line
                     current_line_points.clear();
                     current_line_points.push_back(current_point);
                 }
             }
-            // when the loop reaches the end, the last group of fitting points
-            // have not been saved yet since no unfitting point was found
+
+            // we add the last line after the loop finishes
             if (current_line_points.size() >= 2) {
-                ground_lines_per_segment[i].push_back(fit_line_to_points(current_line_points));
+                Line final_line = fit_line_to_points(current_line_points);
+                if(final_line.is_valid) {
+                    ground_lines_per_segment[i].push_back(final_line);
+                }
             }
         }
 
         // we create two empty vectors which will then hold the ground points
         // and the non-ground points
-        std::vector<Point> ground_points;
+        std::vector<Point> expected_ground_points;
         std::vector<Point> non_ground_points;
 
         // we analyze each single point to classify it
-        for (const auto& p : lidar_data) {
+        for (auto& p : lidar_data) {
             // // at the beginning we say that every point is not a ground point
             // bool is_ground = false;
 
@@ -326,21 +326,166 @@ void Sequential::ground_estimation(
                         // it is then classified as a ground point
                         if (std::abs(p.get_z_value() - exp_height) < vd_ground) {
                             is_ground = true;
+                            break;
                         }
-                        break;
                     }
                 }
             }
             if (is_ground) {
-                ground_points.push_back(p);
+                p.prediction = 40;
+                expected_ground_points.push_back(p);
             } else {
                 non_ground_points.push_back(p);
             }
         }
 
-        std::cout << "Number of ground points: " << ground_points.size() << std::endl;
+        int n_tot_points = 0;
+        int n_real_ground_points = 0;
+        int n_estimate_ground_points = 0;
+        int tp = 0;
+        int fn = 0;
+        int fp = 0;
+        int tn = 0;
 
-        Visualizer ground_and_not_ground_points("Ground and not ground points");
-        ground_and_not_ground_points.visualize_protype_points(lidar_data, ground_points);
+        std::vector<Point> real_ground_points;
+
+        for (auto& p : lidar_data) {
+            n_tot_points++;
+
+            if(p.ground_truth == 40) {
+                n_real_ground_points++;
+            }
+
+            if (p.prediction == 40) {
+                n_estimate_ground_points++;
+            }
+
+            if (p.ground_truth == 40 && p.prediction == 40) {
+                real_ground_points.push_back(p);
+                tp++;
+            }
+            
+            if (p.ground_truth == 40 && p.prediction != 40) {
+                fn++;
+            }
+
+            if (p.ground_truth != 40 && p.prediction == 40) {
+                fp++;
+            }
+
+            if (p.ground_truth != 40 && p.prediction != 40) {
+                tn++;
+            }
+        }
+
+        if (tp + fp + tn + fn == n_tot_points) {
+            float pred_acc = static_cast<float>(tp) / (tp + fp + fn);
+            std::cout << "Jaccard Index = " << pred_acc << std::endl;
+        } else {
+            std::cout << "Wrong true and false positive" << std::endl;
+        }
+
+        Visualizer rgp_vis("Real Ground points visualization");    
+        rgp_vis.timed_visualization(lidar_data, real_ground_points);   
+
+        
+        // defining grid properties
+        float grid_resolution = 1.0;
+
+        // we use placeholders in max and min values for x and y actually calculating them
+        float min_x = non_ground_points[0].x_value; 
+        float max_x = non_ground_points[0].x_value;
+        float min_y = non_ground_points[0].y_value;
+        float max_y = non_ground_points[0].y_value;
+
+        // we calculate maximum and minimum values
+        for (const auto& p: non_ground_points) {
+            if (p.x_value < min_x) {
+                min_x = p.x_value;
+            }
+
+            if (p.x_value > max_x) {
+                max_x = p.x_value;
+            }
+
+            if (p.y_value < min_y) {
+                min_y = p.y_value;
+            }
+
+            if (p.y_value > max_y) {
+                max_y = p.y_value;
+            }
+        }
+
+        // we calculate the grid width and height
+        int grid_width = static_cast<int>(std::ceil((max_x - min_x) / grid_resolution));
+        int grid_height = static_cast<int>(std::ceil((max_y - min_y) / grid_resolution));
+
+        // we then create and populate label and point grids
+        std::vector<std::vector<int>> label_grid(grid_height, std::vector<int>(grid_width, 0));
+        std::vector<std::vector<std::vector<Point*>>> point_grid(grid_height, std::vector<std::vector<Point*>>(grid_width));
+
+        for(auto& p : non_ground_points) {
+            int col_index = static_cast<int>((p.x_value - min_x) / grid_resolution);
+            int row_index = static_cast<int>((p.y_value - min_y) / grid_resolution);
+        
+            if ((col_index >= 0) && (col_index < grid_width) && (row_index >= 0) && (row_index < grid_height)) {
+                // we mark the cell as occupied
+                label_grid[row_index][col_index] = 1;
+                point_grid[row_index][col_index].push_back(&p);
+            }
+        }
+
+        // we then connect adjacent cells
+        int cluster_id = 2;
+        std::queue<std::pair<int, int>> q;
+        
+        int row_offsets[] = {-1, 1, 0, 0};
+        int col_offsets[] = {0, 0, 1, -1};
+
+        for (int r = 0; r < grid_height; r++) {
+            for (int c = 0; c < grid_width; c++) {
+                // if we find a new unlabeled cell
+                if (label_grid[r][c] == 1) {
+                    q.push({r, c});
+                    label_grid[r][c] = cluster_id;
+                
+                    while(!q.empty()) {
+                        std::pair<int, int> curr = q.front();
+                        q.pop();
+
+                        for(int i = 0; i < 4; ++i) {
+                            int nr = curr.first + row_offsets[i];
+                            int nc = curr.second + col_offsets[i];
+
+                            if(nr >= 0 && nr < grid_height && nc >= 0 && nc < grid_width && label_grid[nr][nc] == 1) {
+                                label_grid[nr][nc] = cluster_id;
+                                q.push({nr, nc});
+                            }
+                        } 
+                    }
+
+                    cluster_id++;
+                }
+            }
+        }
+
+
+        int num_clusters = cluster_id - 2;
+        std::vector<std::vector<Point>> final_clusters(num_clusters);
+
+        // we scan all cells
+        for(int r = 0; r < grid_height; ++r) {
+            for(int c = 0; c < grid_width; c++) {
+                // we check if each cell has actually been labeled
+                if (label_grid[r][c] > 1) {
+                    int id = label_grid[r][c] - 2;
+                    // we add the points to the correct cluster
+                    for(Point* p_ptr : point_grid[r][c]) {
+                        final_clusters[id].push_back(*p_ptr);
+                    }
+                }
+            }
+        }
     }
 }
