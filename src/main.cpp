@@ -46,13 +46,13 @@ int main() {
 
             ReadLiDARdata read_data(bin_paths[i], label_paths[i]);
             read_data.read_data(lidar_data);
-            read_data.get_scene_size(lidar_data);
-            std::cout << "Max range: " << read_data.get_max_range() << std::endl;
-            std::cout << "Number of real ground points: " << read_data.get_n_ground_points() << std::endl;
+            // read_data.get_scene_size(lidar_data);
+            // std::cout << "Max range: " << read_data.get_max_range() << std::endl;
+            // std::cout << "Number of real ground points: " << read_data.get_n_ground_points() << std::endl;
 
             Sequential s;
-            s.ground_estimation_and_clustering(lidar_data, 50, 14, read_data.get_max_range());
-            std::cout << std::endl;
+            // s.ground_estimation_and_clustering(lidar_data, 50, 14, read_data.get_max_range());
+            s.point_clustering(lidar_data, 50, 14, read_data.get_max_range(), 0.3, 0.15, 0.2, 0.3);
         }
     }
 }

@@ -489,3 +489,293 @@ void Sequential::ground_estimation_and_clustering(
         }
     }
 }
+
+// function to sort points into segments and bins
+void Sequential::seg_and_bin_sorting(std::vector<Point>& lidar_data, std::vector<std::vector<std::vector<Point>>>& binned_segments, 
+    const int n_segments, const int n_bins, const float max_range) {
+        float angle_size = 360.0/n_segments;
+        float bin_size = max_range / n_bins;
+
+        for (auto& p : lidar_data) {
+            int segment_index = static_cast<int>(p.get_angle() / angle_size);
+            int bin_index = static_cast<int>((p.get_rho() / max_range) * n_bins);
+            
+            if (segment_index >= n_segments) {
+                segment_index = n_segments - 1;
+            }
+            
+            if (bin_index >= n_bins) {
+                bin_index = n_bins - 1;
+            }
+
+            binned_segments[segment_index][bin_index].push_back(p);
+        }
+}
+
+void Sequential::assign_prototype(std::vector<std::vector<std::vector<Point>>>& binned_segments,
+    std::vector<std::vector<Point>>& prototype_points) {
+    for (int i = 0; i < binned_segments.size(); i++) {
+        for (int j = 0; j < binned_segments[i].size(); j++) {
+            if (!binned_segments[i][j].empty()) {
+                auto min_it = std::min_element(binned_segments[i][j].begin(), binned_segments[i][j].end(),
+                [](const Point& left, const Point& right){ return left.get_z_value() < right.get_z_value(); });
+
+                if (min_it != binned_segments[i][j].end()) {
+                    prototype_points[i].push_back(*min_it);
+                }
+            }
+        }
+    }
+
+    for (auto& segment : prototype_points) {
+        std::sort(segment.begin(), segment.end());
+    }
+}
+
+void Sequential::fit_lines(std::vector<std::vector<Point>>& prototype_points,
+    std::vector<std::vector<Line>>& ground_lines_per_segment, const int n_segments,
+    const float max_slope, const float max_rmse, const float max_y_intercept) {
+        for (int i = 0; i < n_segments; ++i) {
+            if (prototype_points[i].size() < 2) {
+                continue;
+            }
+
+            std::vector<Point> current_line_points;
+            current_line_points.push_back(prototype_points[i][0]);
+
+            for (int j = 1; j < prototype_points[i].size(); ++j) {
+                Point current_point = prototype_points[i][j];
+
+                if (current_line_points.size() < 2) {
+                    current_line_points.push_back(current_point);
+                    continue;
+                }
+
+                std::vector<Point> test_points = current_line_points;
+                test_points.push_back(current_point);
+                Line test_line = fit_line_to_points(test_points);
+
+                if ((test_line.is_valid) && (std::abs(test_line.m) < max_slope) && 
+                    (calculate_rmse(test_line, test_points) < max_rmse) && (std::abs(test_line.b) < max_y_intercept)) {
+                    current_line_points.push_back(current_point);
+                } else {
+                    Line final_line = fit_line_to_points(current_line_points);
+                    
+                    if (final_line.is_valid) {
+                        ground_lines_per_segment[i].push_back(final_line);
+                    }
+
+                    current_line_points.clear();
+                    current_line_points.push_back(current_point);
+                }
+            }
+
+            if (current_line_points.size() >= 2) {
+                Line final_line = fit_line_to_points(current_line_points);
+                
+                if (final_line.is_valid) {
+                    ground_lines_per_segment[i].push_back(final_line);
+                }
+            } 
+        }
+    }
+
+void Sequential::ground_points_classification(std::vector<Point>& lidar_data, 
+    std::vector<std::vector<Line>>& ground_lines_per_segment, const int n_segments,
+    const float vd_ground) {
+    float angle_size = 360.0/n_segments;
+
+    for (auto& p : lidar_data) {
+        int segment_index = static_cast<int>(p.get_angle() / angle_size);
+
+        if (segment_index >= n_segments) {
+            segment_index = n_segments - 1;
+        }
+
+        bool is_ground = false;
+
+        if (!ground_lines_per_segment[segment_index].empty()) {
+            for (const auto& line : ground_lines_per_segment[segment_index]) {
+                if ((p.get_rho() >= line.start_range) && (p.get_rho() <= line.end_range)) {
+                    float expected_height = line.m * p.get_rho() + line.b;
+
+                    if (std::abs(p.get_z_value() - expected_height) < vd_ground) {
+                        is_ground = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (is_ground) {
+            p.prediction = 40;
+        }
+    }
+}
+
+void Sequential::print_ground_statistics(std::vector<Point>& lidar_data) {
+    int tot_number_points = 0;
+    int num_real_ground_points = 0;
+    int num_estimate_ground_ground__points = 0;
+
+    int true_positive = 0;
+    int true_negative = 0;
+    int false_positive = 0;
+    int false_negative = 0;
+
+    for (auto& p : lidar_data) {
+        tot_number_points++;
+        
+        if (p.ground_truth == 40) {
+            num_real_ground_points++;
+        }
+
+        if (p.prediction == 40) {
+            num_estimate_ground_ground__points++;
+        }
+
+        if (p.ground_truth == 40 && p.prediction == 40) {
+            true_positive++;
+        }
+
+        if (p.ground_truth == 40 && p.prediction != 40) {
+            false_negative++;
+        }
+
+        if (p.ground_truth != 40 && p.prediction == 40) {
+            false_positive++;
+        }
+
+        if (p.ground_truth != 40 && p.prediction != 40) {
+            true_negative++;
+        }
+    }
+
+    if ((true_positive + true_negative + false_positive + false_negative == tot_number_points)) {
+        float classification_accuracy = (static_cast<float>(true_positive)) / (true_positive + false_positive + false_negative);
+        std::cout << "mIoU: " << classification_accuracy << std::endl;
+    } else {
+        std::cout << "Wrong calculation" << std::endl;
+    }
+}
+
+void Sequential::remaining_points_classification(std::vector<Point>& lidar_data,
+    const float grid_resolution) {
+    std::vector<Point*> non_ground_points;
+    int num_clusters = 0;
+
+    for (auto& p : lidar_data) {
+        if (p.prediction != 40) {
+            non_ground_points.push_back(&p);
+        }
+    }
+
+    if (non_ground_points.empty()) {
+        num_clusters = 0;
+        return;
+    }
+
+    float min_x = non_ground_points[0]->x_value;
+    float max_x = non_ground_points[0]->x_value;
+    float min_y = non_ground_points[0]->y_value;
+    float max_y = non_ground_points[0]->y_value;
+
+    for (const auto& p_ptr : non_ground_points) {
+        if (p_ptr->x_value < min_x) {
+            min_x = p_ptr->x_value;
+        }
+
+        if (p_ptr->x_value > max_x) {
+            max_x = p_ptr->x_value;
+        }
+
+        if (p_ptr->y_value < min_y) {
+            min_y = p_ptr->y_value;
+        }
+
+        if (p_ptr->y_value > max_y) {
+            max_y = p_ptr->y_value;
+        }
+    }
+
+    int grid_width = static_cast<int>(std::ceil((max_x - min_x) / grid_resolution));
+    int grid_height = static_cast<int>(std::ceil((max_y - min_y) / grid_resolution));
+
+    std::vector<std::vector<int>> label_grid(grid_height, std::vector<int>(grid_width, 0));
+    std::vector<std::vector<std::vector<Point*>>> point_grid(grid_height, std::vector<std::vector<Point*>>(grid_width));
+
+    for (Point* p_ptr : non_ground_points) {
+        int col_index = static_cast<int>((p_ptr->x_value - min_x) / grid_resolution);
+        int row_index = static_cast<int>((p_ptr->y_value - min_y) / grid_resolution);
+
+        if ((col_index >= 0) && (col_index < grid_width) && (row_index >= 0) && (row_index < grid_height)) {
+            label_grid[row_index][col_index] = 1;
+            point_grid[row_index][col_index].push_back(p_ptr);
+        }
+    }
+
+    int cluster_id = 2;
+    std::queue<std::pair<int, int>> q;
+
+    int row_offset[] = {-1, 1, 0, 0};
+    int col_offset[] = {0, 0, 1, -1};
+
+    for (int r = 0; r < grid_height; ++r) {
+        for (int c = 0; c < grid_width; ++c) {
+            if (label_grid[r][c] == 1) {
+                q.push({r, c});
+                label_grid[r][c] = cluster_id;
+
+                while (!q.empty()) {
+                    std::pair<int, int> current = q.front();
+                    q.pop();
+
+                    for (int i = 0; i < 4; ++i) {
+                        int nr = current.first + row_offset[i];
+                        int nc = current.second + col_offset[i];
+
+                        if ((nr >= 0) && (nr < grid_height) && (nc >= 0) && (nc < grid_width) && (label_grid[nr][nc] == 1)) {
+                            label_grid[nr][nc] = cluster_id;
+                            q.push({nr, nc});
+                        }
+                    }
+                }
+            
+                cluster_id++;
+            }
+        }
+    }
+
+    num_clusters = cluster_id - 2;
+
+    for (int r = 0; r < grid_height; ++r) {
+        for (int c = 0; c < grid_width; ++c) {
+            if (label_grid[r][c] > 1) {
+                int final_cluster_id = label_grid[r][c];
+                
+                for (Point* p_ptr : point_grid[r][c]) {
+                    p_ptr->prediction = final_cluster_id;
+                }
+            }
+        }
+    }
+}
+
+void Sequential::point_clustering(std::vector<Point>& lidar_data, const int n_segments, const int n_bins, const float max_range,
+    const float max_slope, const float vd_ground, const float max_y_intercept, const float max_rmse) {
+    if (n_bins < 0 || n_segments < 0) {
+        throw std::invalid_argument("Number of bins or segments is invalid");
+    } else {
+        std::vector<std::vector<std::vector<Point>>> binned_segments(n_segments,
+            std::vector<std::vector<Point>>(n_bins));
+        std::vector<std::vector<Point>> prototype_points(n_segments);
+        std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
+
+        seg_and_bin_sorting(lidar_data, binned_segments, n_segments, n_bins, max_range);
+        assign_prototype(binned_segments, prototype_points);
+        fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
+        ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
+        print_ground_statistics(lidar_data);
+        remaining_points_classification(lidar_data, 1.0);
+    }
+}
