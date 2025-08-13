@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <ctime>
+#include <map>
 
 Visualizer::Visualizer(const std::string& s) : 
     window_title{s},
@@ -10,7 +11,7 @@ Visualizer::Visualizer(const std::string& s) :
         pangolin::ModelViewLookAt(0, 0, 35, 0, 0, 0, pangolin::AxisX)
     ),
     handler(s_cam) {
-    pangolin::CreateWindowAndBind(s, 500, 600);
+    pangolin::CreateWindowAndBind(s, 1000, 800);
     glEnable(GL_DEPTH_TEST);
 
     d_cam = &pangolin::CreateDisplay()
@@ -153,6 +154,58 @@ void Visualizer::visualize_ground_estimation(const std::vector<Point>& lidar_dat
                 }
 
                 glVertex3d(p.get_x_value(), p.get_y_value(), p.get_z_value());
+            }
+
+            glEnd();
+            pangolin::glDrawAxis(2);
+            pangolin::FinishFrame();
+        }
+    }
+}
+
+void Visualizer::visualize_clusters(const std::vector<Point>& lidar_data) {
+    if (lidar_data.empty()) {
+        return;
+    } else {
+        std::vector<const Point*> sorted_clusters;
+
+        for (auto& p : lidar_data) {
+            sorted_clusters.push_back(&p);
+        }
+
+        std::sort(sorted_clusters.begin(), sorted_clusters.end(),
+            [](const Point* a, const Point* b){ return (a->prediction < b->prediction); });
+
+        std::map<uint32_t, pangolin::Colour> colours_for_clusters;
+        srand(time(0));
+
+        for (const Point* p_ptr : sorted_clusters) {
+            if (p_ptr->prediction == 40) {
+                colours_for_clusters[p_ptr->prediction] = pangolin::Colour(1.0, 0.0, 0.0);
+            } else if (p_ptr->prediction == 0) {
+                colours_for_clusters[p_ptr->prediction] = pangolin::Colour(1.0, 1.0, 1.0);
+            } else {
+                float r_value = static_cast<float>(rand() / static_cast<float>(RAND_MAX));
+                float g_value = static_cast<float>(rand() / static_cast<float>(RAND_MAX));
+                float b_value = static_cast<float>(rand() / static_cast<float>(RAND_MAX));
+
+                colours_for_clusters[p_ptr->prediction] = pangolin::Colour(r_value, g_value, b_value);
+            }
+        }
+
+        while (!pangolin::ShouldQuit()) {
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClearColor(0.1f, 0.1f, 0.1f, 0.1f);
+
+            d_cam->Activate(s_cam);
+
+            glPointSize(1.0);
+            glBegin(GL_POINTS);
+
+            for (const Point* p_ptr : sorted_clusters) {
+                pangolin::Colour tmp_colour = colours_for_clusters[p_ptr->prediction];
+                glColor3f(tmp_colour.r, tmp_colour.g, tmp_colour.b);
+                glVertex3d(p_ptr->get_x_value(), p_ptr->get_y_value(), p_ptr->get_z_value());
             }
 
             glEnd();

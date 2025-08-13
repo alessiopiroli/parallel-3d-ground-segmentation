@@ -777,7 +777,8 @@ void Sequential::point_clustering(std::vector<Point>& lidar_data, const int n_se
         fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
         ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
         print_ground_statistics(lidar_data);
-        visualizer.visualize_ground_estimation(lidar_data);
-        remaining_points_classification(lidar_data, 1.0);
+        // visualizer.visualize_ground_estimation(lidar_data);
+        remaining_points_classification(lidar_data, 0.3);
+        visualizer.visualize_clusters(lidar_data);
     }
 }
