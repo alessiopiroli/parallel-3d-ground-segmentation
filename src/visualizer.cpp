@@ -126,3 +126,38 @@ void Visualizer::timed_visualization(const std::vector<Point>& lidar_data, const
         }
     }
 }
+
+void Visualizer::visualize_ground_estimation(const std::vector<Point>& lidar_data) {
+    if (!lidar_data.empty()) {
+        while (!pangolin::ShouldQuit()) {
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClearColor(0.1f, 0.1f, 0.1f, 0.1f);
+
+            d_cam->Activate(s_cam);
+
+            glPointSize(1.0);
+            glBegin(GL_POINTS);
+
+            for (const auto& p : lidar_data) {
+                if ((p.prediction == 40) &&  (p.ground_truth == 40)) {
+                    // green -> correctly guessed points
+                    glColor3f(0.0, 1.0, 0.0);
+                } else if ((p.prediction == 40) && (p.ground_truth != 40)) {
+                    // red -> wrongly guessed points
+                    glColor3f(1.0, 0.0, 0.0);
+                } else if ((p.prediction != 40) && (p.ground_truth == 40)) {
+                    // blue -> real ground points not guessed
+                    glColor3f(0.0, 0.0, 1.0);
+                } else {
+                    glColor3f(1.0, 1.0, 1.0);
+                }
+
+                glVertex3d(p.get_x_value(), p.get_y_value(), p.get_z_value());
+            }
+
+            glEnd();
+            pangolin::glDrawAxis(2);
+            pangolin::FinishFrame();
+        }
+    }
+}

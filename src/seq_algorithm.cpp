@@ -770,12 +770,14 @@ void Sequential::point_clustering(std::vector<Point>& lidar_data, const int n_se
             std::vector<std::vector<Point>>(n_bins));
         std::vector<std::vector<Point>> prototype_points(n_segments);
         std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
+        Visualizer visualizer("Ground estimation");
 
         seg_and_bin_sorting(lidar_data, binned_segments, n_segments, n_bins, max_range);
         assign_prototype(binned_segments, prototype_points);
         fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
         ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
         print_ground_statistics(lidar_data);
+        visualizer.visualize_ground_estimation(lidar_data);
         remaining_points_classification(lidar_data, 1.0);
     }
 }
