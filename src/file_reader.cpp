@@ -32,7 +32,7 @@ bool Point::operator<(const Point& other) const{
 }
 
 ReadLiDARdata::ReadLiDARdata(const std::string& coordinates_path_, const std::string& labels_path_) : 
-    coordinates_path{coordinates_path_}, labels_path{labels_path_} {}
+    coordinates_path{coordinates_path_}, labels_path{labels_path_}, ground_point_number{0}, max_range{0.0} {}
 
 void ReadLiDARdata::read_data(std::vector<Point>& lidar_data) {
     FILE* coordinates_pointer = fopen(coordinates_path.c_str(), "rb");
@@ -68,6 +68,7 @@ void ReadLiDARdata::read_data(std::vector<Point>& lidar_data) {
     }
 
     fclose(coordinates_pointer);
+    fclose(labels_pointer);
 
     auto max_it = std::max_element(lidar_data.begin(), lidar_data.end(), 
         [](const Point& left, const Point& right){ return left.get_rho() < right.get_rho(); });
