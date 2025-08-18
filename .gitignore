@@ -1,3 +1,6 @@
 /build/
+/plots/
+/performances/
+/experiments/
 
 .vscode/

@@ -4,8 +4,14 @@
 #include <algorithm>
 #include <queue>
 
+Sequential::Sequential() {
+    sequential_timings.resize(5, 0.0);
+}
+
 Sequential::Sequential(const float slope_, const int n_bins_, const int n_segments):
-    slope{slope_}, n_bins{n_bins_} {}
+    slope{slope_}, n_bins{n_bins_} {
+        sequential_timings.resize(5, 0.0);
+    }
 
 void Sequential::plot_first_quadrant(std::vector<Point>& lidar_data) {
     std::vector<Point> first_quadrant;
@@ -771,13 +777,40 @@ void Sequential::seq_point_clustering(std::vector<Point>& lidar_data, const int 
         std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
         Visualizer seq_visualizer("Sequential Classficiation");
 
+        // timing and running sequential seg_and_bin_sorting
+        auto start = std::chrono::high_resolution_clock::now();
         seq_seg_and_bin_sorting(lidar_data, binned_segments, n_segments, n_bins, max_range);
+        auto end = std::chrono::high_resolution_clock::now();
+        sequential_timings[0] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running seuential assign_prototype
+        start = std::chrono::high_resolution_clock::now();
         seq_assign_prototype(binned_segments, prototype_points);
+        end = std::chrono::high_resolution_clock::now();
+        sequential_timings[1] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running fit_lines
+        start = std::chrono::high_resolution_clock::now();
         seq_fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
+        end = std::chrono::high_resolution_clock::now();
+        sequential_timings[2] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running ground_points_classification
+        start = std::chrono::high_resolution_clock::now();
         seq_ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
-        print_ground_statistics(lidar_data);
-        // seq_visualizer.visualize_ground_estimation(lidar_data);
+        end = std::chrono::high_resolution_clock::now();
+        sequential_timings[3] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // print_ground_statistics(lidar_data);
+        
+        seq_visualizer.visualize_ground_estimation(lidar_data);
+
+        // timing and running remaining_point_classification
+        start = std::chrono::high_resolution_clock::now();
         seq_remaining_points_classification(lidar_data, 0.3);
-        seq_visualizer.visualize_clusters(lidar_data);
+        end = std::chrono::high_resolution_clock::now();
+        sequential_timings[4] += std::chrono::duration<double, std::milli>(end - start).count();
+        
+        // seq_visualizer.visualize_clusters(lidar_data);
     }
 }

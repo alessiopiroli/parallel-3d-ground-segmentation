@@ -11,6 +11,8 @@ private:
     const int num_threads = 0;
 
 public:
+    std::vector<double> parallel_timings;
+
     Parallel() = default;
 
     Parallel(const int num_threads_);
@@ -30,6 +32,11 @@ public:
         const float vd_ground);
 
     void print_ground_statistics(std::vector<Point>& lidar_data);
+
+    // function is inherently sequential, no need to parallelize therefore
+    // we use sequential version from sequential algorithm
+    void slow_par_remaining_points_classification(std::vector<Point>& lidar_data,
+        const float grid_resolution);
 
     void par_remaining_points_classification(std::vector<Point>& lidar_data,
         const float grid_resolution);

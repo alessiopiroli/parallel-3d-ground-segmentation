@@ -1,9 +1,11 @@
-#include "par_agorithm.hpp"
+#include "par_algorithm.hpp"
 
 #include <algorithm>
 #include <queue>
 
-Parallel::Parallel(const int num_threads_) : num_threads{num_threads_} {}
+Parallel::Parallel(const int num_threads_) : num_threads{num_threads_} {
+    parallel_timings.resize(5, 0.0);
+}
 
 void Parallel::par_seg_and_bin_sorting(std::vector<Point>& lidar_data, std::vector<std::vector<std::vector<Point>>>& binned_segments, 
         const int n_segments, const int n_bins, const float max_range) {
@@ -196,7 +198,7 @@ void Parallel::print_ground_statistics(std::vector<Point>& lidar_data) {
     }
 }
 
-void Parallel::par_remaining_points_classification(std::vector<Point>& lidar_data,
+void Parallel::slow_par_remaining_points_classification(std::vector<Point>& lidar_data,
     const float grid_resolution) {
     std::vector<Point*> non_ground_points;
     int num_clusters = 0;
@@ -286,6 +288,108 @@ void Parallel::par_remaining_points_classification(std::vector<Point>& lidar_dat
     }
 }
 
+void Parallel::par_remaining_points_classification(std::vector<Point>& lidar_data,
+        const float grid_resolution) {
+    std::vector<Point*> non_ground_points;
+    int num_clusters = 0;
+
+    for (auto& p : lidar_data) {
+        if (p.prediction != 40) {
+            non_ground_points.push_back(&p);
+        }
+    }
+
+    if (non_ground_points.empty()) {
+        return;
+    }
+
+    float min_x = non_ground_points[0]->x_value;
+    float max_x = non_ground_points[0]->x_value;
+    float min_y = non_ground_points[0]->y_value;
+    float max_y = non_ground_points[0]->y_value;
+
+    for (const auto& p_ptr : non_ground_points) {
+        if (p_ptr->x_value < min_x) {
+            min_x = p_ptr->x_value;
+        }
+
+        if (p_ptr->x_value > max_x) {
+            max_x = p_ptr->x_value;
+        }
+
+        if (p_ptr->y_value < min_y) {
+            min_y = p_ptr->y_value;
+        }
+
+        if (p_ptr->y_value > max_y) {
+            max_y = p_ptr->y_value;
+        }
+    }
+
+    int grid_width = static_cast<int>(std::ceil((max_x - min_x) / grid_resolution));
+    int grid_height = static_cast<int>(std::ceil((max_y - min_y) / grid_resolution));
+
+    std::vector<std::vector<int>> label_grid(grid_height, std::vector<int>(grid_width, 0));
+    std::vector<std::vector<std::vector<Point*>>> point_grid(grid_height, std::vector<std::vector<Point*>>(grid_width));
+
+    for (Point* p_ptr : non_ground_points) {
+        int col_index = static_cast<int>((p_ptr->x_value - min_x) / grid_resolution);
+        int row_index = static_cast<int>((p_ptr->y_value - min_y) / grid_resolution);
+
+        if ((col_index >= 0) && (col_index < grid_width) && (row_index >= 0) && (row_index < grid_height)) {
+            label_grid[row_index][col_index] = 1;
+            point_grid[row_index][col_index].push_back(p_ptr);
+        }
+    }
+
+    int cluster_id = 2;
+    std::queue<std::pair<int, int>> q;
+
+    int row_offset[] = {-1, 1, 0, 0};
+    int col_offset[] = {0, 0, 1, -1};
+
+    for (int r = 0; r < grid_height; ++r) {
+        for (int c = 0; c < grid_width; ++c) {
+            if (label_grid[r][c] == 1) {
+                q.push({r, c});
+                label_grid[r][c] = cluster_id;
+
+                while (!q.empty()) {
+                    std::pair<int, int> current = q.front();
+                    q.pop();
+
+                    for (int i = 0; i < 4; ++i) {
+                        int nr = current.first + row_offset[i];
+                        int nc = current.second + col_offset[i];
+
+                        if ((nr >= 0) && (nr < grid_height) && (nc >= 0) && (nc < grid_width) && (label_grid[nr][nc] == 1)) {
+                            label_grid[nr][nc] = cluster_id;
+                            q.push({nr, nc});
+                        }
+                    }
+                }
+            
+                cluster_id++;
+            }
+        }
+    }
+
+    num_clusters = cluster_id - 2;
+
+    for (int r = 0; r < grid_height; ++r) {
+        for (int c = 0; c < grid_width; ++c) {
+            if (label_grid[r][c] > 1) {
+                int final_cluster_id = label_grid[r][c];
+                
+                for (Point* p_ptr : point_grid[r][c]) {
+                    p_ptr->prediction = final_cluster_id;
+                }
+            }
+        }
+    }
+}
+
+
 void Parallel::par_point_clustering(std::vector<Point>& lidar_data, const int n_segments, const int n_bins, const float max_range,
         const float max_slope, const float vd_ground, const float max_y_intercept, const float max_rmse) {
     if (n_bins < 0 || n_segments < 0) {
@@ -295,15 +399,42 @@ void Parallel::par_point_clustering(std::vector<Point>& lidar_data, const int n_
             std::vector<std::vector<Point>>(n_bins));
         std::vector<std::vector<Point>> prototype_points(n_segments);
         std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
-        Visualizer par_visualizer("Parallel Classification");
+        // Visualizer par_visualizer("Parallel Classification");
 
+        // timing and running parallel seg_and_bin_sorting
+        auto start = std::chrono::high_resolution_clock::now();
         par_seg_and_bin_sorting(lidar_data, binned_segments, n_segments, n_bins, max_range);
+        auto end = std::chrono::high_resolution_clock::now();
+        parallel_timings[0] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running seuential assign_prototype
+        start = std::chrono::high_resolution_clock::now();
         par_assign_prototype(binned_segments, prototype_points);
+        end = std::chrono::high_resolution_clock::now();
+        parallel_timings[1] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running fit_lines
+        start = std::chrono::high_resolution_clock::now();
         par_fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
+        end = std::chrono::high_resolution_clock::now();
+        parallel_timings[2] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // timing and running ground_points_classification
+        start = std::chrono::high_resolution_clock::now();
         par_ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
-        print_ground_statistics(lidar_data);
+        end = std::chrono::high_resolution_clock::now();
+        parallel_timings[3] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // print_ground_statistics(lidar_data);
         // par_visualizer.visualize_ground_estimation(lidar_data);
+
+        // timing and running remaining_point_classification
+        start = std::chrono::high_resolution_clock::now();
+        // slow_par_remaining_points_classification(lidar_data, 0.3);
         par_remaining_points_classification(lidar_data, 0.3);
-        par_visualizer.visualize_clusters(lidar_data);
+        end = std::chrono::high_resolution_clock::now();
+        parallel_timings[4] += std::chrono::duration<double, std::milli>(end - start).count();
+
+        // par_visualizer.visualize_clusters(lidar_data);
     }
 }

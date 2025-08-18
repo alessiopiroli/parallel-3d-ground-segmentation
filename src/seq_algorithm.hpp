@@ -3,6 +3,7 @@
 #include "file_reader.hpp"
 
 #include <utility>
+#include <chrono>
 
 struct Line {
     float m;
@@ -24,9 +25,11 @@ private:
     int n_bins;
 
 public:
+    std::vector<double> sequential_timings;
+
     Sequential(const float slope_, const int n_bins_, const int n_segments);
 
-    Sequential() = default;
+    Sequential();
 
     // Debugging functions
     void plot_first_quadrant(std::vector<Point>& lidar_data);
