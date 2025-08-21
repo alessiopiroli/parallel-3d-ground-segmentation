@@ -399,41 +399,40 @@ void Parallel::par_point_clustering(std::vector<Point>& lidar_data, const int n_
             std::vector<std::vector<Point>>(n_bins));
         std::vector<std::vector<Point>> prototype_points(n_segments);
         std::vector<std::vector<Line>> ground_lines_per_segment(n_segments);
-        // Visualizer par_visualizer("Parallel Classification");
+        Visualizer par_visualizer("Parallel Classification");
 
         // timing and running parallel seg_and_bin_sorting
-        auto start = std::chrono::high_resolution_clock::now();
+        // auto start = std::chrono::high_resolution_clock::now();
         par_seg_and_bin_sorting(lidar_data, binned_segments, n_segments, n_bins, max_range);
-        auto end = std::chrono::high_resolution_clock::now();
-        parallel_timings[0] += std::chrono::duration<double, std::milli>(end - start).count();
+        // auto end = std::chrono::high_resolution_clock::now();
+        // parallel_timings[0] += std::chrono::duration<double, std::milli>(end - start).count();
 
         // timing and running seuential assign_prototype
-        start = std::chrono::high_resolution_clock::now();
+        // start = std::chrono::high_resolution_clock::now();
         par_assign_prototype(binned_segments, prototype_points);
-        end = std::chrono::high_resolution_clock::now();
-        parallel_timings[1] += std::chrono::duration<double, std::milli>(end - start).count();
+        // end = std::chrono::high_resolution_clock::now();
+        // parallel_timings[1] += std::chrono::duration<double, std::milli>(end - start).count();
 
         // timing and running fit_lines
-        start = std::chrono::high_resolution_clock::now();
+        // start = std::chrono::high_resolution_clock::now();
         par_fit_lines(prototype_points, ground_lines_per_segment, n_segments, max_slope, max_rmse, max_y_intercept);
-        end = std::chrono::high_resolution_clock::now();
-        parallel_timings[2] += std::chrono::duration<double, std::milli>(end - start).count();
+        // end = std::chrono::high_resolution_clock::now();
+        // parallel_timings[2] += std::chrono::duration<double, std::milli>(end - start).count();
 
         // timing and running ground_points_classification
-        start = std::chrono::high_resolution_clock::now();
+        // start = std::chrono::high_resolution_clock::now();
         par_ground_points_classification(lidar_data, ground_lines_per_segment, n_segments, vd_ground);
-        end = std::chrono::high_resolution_clock::now();
-        parallel_timings[3] += std::chrono::duration<double, std::milli>(end - start).count();
+        // end = std::chrono::high_resolution_clock::now();
+        // parallel_timings[3] += std::chrono::duration<double, std::milli>(end - start).count();
 
-        // print_ground_statistics(lidar_data);
-        // par_visualizer.visualize_ground_estimation(lidar_data);
+        print_ground_statistics(lidar_data);
+        par_visualizer.visualize_ground_estimation(lidar_data);
 
         // timing and running remaining_point_classification
-        start = std::chrono::high_resolution_clock::now();
-        // slow_par_remaining_points_classification(lidar_data, 0.3);
+        // start = std::chrono::high_resolution_clock::now();
         par_remaining_points_classification(lidar_data, 0.3);
-        end = std::chrono::high_resolution_clock::now();
-        parallel_timings[4] += std::chrono::duration<double, std::milli>(end - start).count();
+        // end = std::chrono::high_resolution_clock::now();
+        // parallel_timings[4] += std::chrono::duration<double, std::milli>(end - start).count();
 
         // par_visualizer.visualize_clusters(lidar_data);
     }
