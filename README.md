@@ -1,4 +1,8 @@
 ## Parallel 3D Ground Segmentation
+[![IEEE](https://img.shields.io/badge/IEEE-Paper-blue?style=flat-square)](https://ieeexplore.ieee.org/document/5548059)
+[![Language](https://img.shields.io/badge/Language-C++-orange?style=flat-square)](https://en.wikipedia.org/wiki/C%2B%2B)
+<br>
+
 This project implements and parallelizes the algorithm described in *Fast Segmentation of 3D Point Clouds for Ground Vehicles,
 Himmelsbach et al. (2010)* [(link)](https://ieeexplore.ieee.org/document/5548059), which focuses on the segmentation 
 of ground points in a LiDAR point cloud. The algorithm is first implemented sequentially in C++ and the parallelized using the
