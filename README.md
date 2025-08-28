@@ -48,7 +48,9 @@ point cloud in an urban environment.
   <img src="segmentation_example/seg_example_2.png" width="400"/>
 </p>
 
+https://github.com/user-attachments/assets/f6fcd77d-1e52-419b-a5ba-4f2455d6cbb7
+
 - **White** = correctly identified non-ground points (true negatives)  
-- **Green** = correctly identified ground points (true positives)  
+- **Green** = correctly identified ground points (true positives)
 - **Red** = points incorrectly classified as ground (false positives)  
 - **Blue** = points incorrectly classified as non-ground (false negatives)
